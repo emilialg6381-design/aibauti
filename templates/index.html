@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Studio | bauti1823xd</title>
+    <style>
+        :root {
+            --primary: #818cf8;
+            --primary-hover: #6366f1;
+            --bg: #0f172a;
+            --card: rgba(30, 41, 59, 0.7);
+            --text: #f8fafc;
+            --text-dim: #94a3b8;
+            --border: rgba(255, 255, 255, 0.1);
+        }
+
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg);
+            background-image: radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.15) 0px, transparent 50%);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            background: var(--card);
+            backdrop-filter: blur(12px);
+            padding: 2rem;
+            border-radius: 24px;
+            width: 100%;
+            max-width: 500px;
+            text-align: center;
+            border: 1px solid var(--border);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+        }
+
+        /* --- BOTONES DE MODO --- */
+        .mode-selector {
+            display: flex;
+            background: rgba(15, 23, 42, 0.5);
+            padding: 5px;
+            border-radius: 14px;
+            margin-bottom: 25px;
+            border: 1px solid var(--border);
+        }
+
+        .mode-btn {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 10px;
+            background: transparent;
+            color: var(--text-dim);
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .mode-btn.active {
+            background: var(--primary);
+            color: white;
+            box-shadow: 0 4px 12px rgba(129, 140, 248, 0.3);
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        input {
+            width: 100%;
+            padding: 14px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            background: rgba(15, 23, 42, 0.6);
+            color: white;
+            box-sizing: border-box;
+            outline: none;
+        }
+
+        #generateBtn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 14px;
+            border-radius: 12px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        #generateBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* --- GALERÍA --- */
+        #videoGrid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 20px;
+            width: 100%;
+            max-width: 1000px;
+            margin-top: 40px;
+        }
+
+        .card {
+            background: var(--card);
+            border-radius: 18px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            position: relative;
+        }
+
+        .badge {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.6);
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            backdrop-filter: blur(4px);
+        }
+
+        .info { padding: 12px; text-align: left; }
+        .prompt-text { font-size: 0.85rem; color: var(--text-dim); margin: 0 0 10px 0; }
+
+        /* Loader */
+        .loader {
+            border: 3px solid rgba(255,255,255,0.1);
+            border-top: 3px solid var(--primary);
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            margin: 15px auto;
+            display: none;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1 style="margin-top:0">🎨 AI Studio</h1>
+        
+        <div class="mode-selector">
+            <button class="mode-btn active" id="btn-video" onclick="changeMode('video')">🎥 Video</button>
+            <button class="mode-btn" id="btn-image" onclick="changeMode('image')">🖼️ Imagen</button>
+        </div>
+
+        <div class="input-group">
+            <input type="text" id="promptInput" placeholder="Describe tu video...">
+            <button id="generateBtn" onclick="handleGenerate()">Generar</button>
+        </div>
+
+        <div id="loader" class="loader"></div>
+        <p id="statusMsg" style="font-size: 0.8rem; color: var(--text-dim); margin-top: 10px;"></p>
+    </div>
+
+    <div id="videoGrid"></div>
+
+    <script>
+        let currentMode = 'video';
+        let pollInterval;
+        let lastCount = -1;
+
+        // Cargar galería al iniciar
+        window.onload = refresh;
+
+        function changeMode(mode) {
+            currentMode = mode;
+            document.getElementById('btn-video').classList.toggle('active', mode === 'video');
+            document.getElementById('btn-image').classList.toggle('active', mode === 'image');
+            document.getElementById('promptInput').placeholder = mode === 'video' ? "Describe tu video..." : "Describe tu imagen...";
+        }
+
+        async function refresh() {
+            const res = await fetch('/status');
+            const data = await res.json();
+            renderGallery(data.history);
+        }
+
+        async function handleGenerate() {
+            const prompt = document.getElementById('promptInput').value;
+            if(!prompt) return;
+
+            setLoading(true, `Generando ${currentMode}...`);
+            
+            await fetch('/generate', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ prompt: prompt, mode: currentMode })
+            });
+
+            startPolling();
+        }
+
+        function startPolling() {
+            if(pollInterval) clearInterval(pollInterval);
+            pollInterval = setInterval(async () => {
+                const res = await fetch('/status');
+                const data = await res.json();
+
+                if(data.history.length !== lastCount) renderGallery(data.history);
+
+                if(data.state === 'done') {
+                    clearInterval(pollInterval);
+                    setLoading(false, "¡Listo!");
+                } else if(data.state === 'error') {
+                    clearInterval(pollInterval);
+                    setLoading(false, "Error: " + data.last_error);
+                }
+            }, 3000);
+        }
+
+        function renderGallery(history) {
+            lastCount = history.length;
+            const grid = document.getElementById('videoGrid');
+            if(history.length === 0) {
+                grid.innerHTML = '<p style="grid-column: 1/-1; color:var(--text-dim)">Aún no hay creaciones.</p>';
+                return;
+            }
+
+            grid.innerHTML = history.map(item => `
+                <div class="card">
+                    <span class="badge">${item.type === 'video' ? '🎬 Video' : '🖼️ Foto'}</span>
+                    ${item.type === 'video' 
+                        ? `<video src="${item.url}" width="100%" controls playsinline></video>` 
+                        : `<img src="${item.url}" width="100%" style="display:block">`
+                    }
+                    <div class="info">
+                        <p class="prompt-text">${item.prompt}</p>
+                        <a href="${item.url}" download style="color:var(--primary); text-decoration:none; font-size:0.8rem; font-weight:bold;">⬇ Descargar</a>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function setLoading(on, msg) {
+            document.getElementById('generateBtn').disabled = on;
+            document.getElementById('loader').style.display = on ? 'block' : 'none';
+            document.getElementById('statusMsg').innerText = msg;
+        }
+    </script>
+</body>
+</html>
